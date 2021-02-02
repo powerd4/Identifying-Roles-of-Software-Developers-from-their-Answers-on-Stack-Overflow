@@ -1,0 +1,17 @@
+SELECT 
+Answers.Id,
+Answers.ParentId,
+Answers.OwnerUserId,
+Questions.Tags
+
+FROM Posts AS Answers
+
+INNER JOIN PostTypes
+ON PostTypes.Id = Answers.PostTypeId
+
+INNER JOIN Posts as Questions
+  ON Questions.Id = Answers.ParentId
+  AND Questions.AcceptedAnswerId = Answers.Id
+
+WHERE PostTypes.Name = 'Answer'
+AND Questions.CreationDate BETWEEN '2018-12-16' AND '2018-12-31'
