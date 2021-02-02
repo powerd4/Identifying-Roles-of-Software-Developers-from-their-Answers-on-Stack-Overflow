@@ -4,6 +4,8 @@ library(tidyverse)
 library(readr)
 library(scales)
 
+year <- 2018
+
 preprocess <- function(year) {
   # read and concatenate all files in folder
   list.files(path = paste0("data/raw/", year, "_data"), full.names = TRUE) %>%
@@ -43,7 +45,7 @@ preprocess <- function(year) {
     filter(user_tag_breadth > 1)
 }
 
-df <- preprocess('2018')
+df <- preprocess(year)
 
 # most common tags answered.
 wheelhouses <- df %>%
@@ -99,7 +101,7 @@ networkise <-
                Weight = n) %>%
         # keep A-B and discard B-A
         filter(Tags < Tags_2) %>%
-        arrange(desc(weight)) %>%
+        arrange(desc(Weight)) %>%
         write_csv(paste0('data/preprocessed/', year, '_top_', top_n_tags, '_', similarity, '.csv'))
     } else if (similarity == 'cosine') {
       G <- G %>%
@@ -116,7 +118,7 @@ networkise <-
                Weight = similarity) %>%
         # keep A-B and discard B-A
         filter(Tags < Tags_2) %>%
-        arrange(desc(weight)) %>%
+        arrange(desc(Weight)) %>%
         write_csv(paste0('data/preprocessed/', year, '_top_', top_n_tags, '_', similarity, '.csv'))
     } else {
       print('Error: similarity must be either \"simple\" or \"cosine\".')
