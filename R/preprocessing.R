@@ -8,7 +8,8 @@ year <- 2018
 
 preprocess <- function(year) {
   # read and concatenate all files in folder
-  list.files(path = paste0("data/raw/", year, "_data"), full.names = TRUE) %>%
+  list.files(path = paste0("data/raw/", year, "_data"),
+             full.names = TRUE) %>%
     lapply(read_csv) %>%
     bind_rows() %>%
     unique() %>%
@@ -63,8 +64,8 @@ wheelhouses %>%
 
 # inspect the tag popularity distribution.
 # there are 6,888 unique questions, BUT:
-# the top 150 tags covers off around 90% of questions.
-# I will limit to the top 150 tags for computational efficiency.
+# the top 60 tags covers off around 85% of questions at a nice elbow point.
+# I will limit to the top 60 tags for computational efficiency.
 df %>%
   group_by(Tags) %>%
   summarise(TagCount = n_distinct(ParentId)) %>%
@@ -82,7 +83,7 @@ df %>%
 # create source-target-weight format df to create network.
 networkise <-
   function(df,
-           top_n_tags = 150,
+           top_n_tags = 60,
            similarity = 'simple') {
     G <- df %>%
       inner_join(
@@ -95,14 +96,22 @@ networkise <-
     
     if (similarity == 'simple') {
       G %>%
-        widyr::pairwise_count(Tags, OwnerUserId) %>% 
+        widyr::pairwise_count(Tags, OwnerUserId) %>%
         rename(Tags = item1,
                Tags_2 = item2,
                Weight = n) %>%
         # keep A-B and discard B-A
         filter(Tags < Tags_2) %>%
         arrange(desc(Weight)) %>%
-        write_csv(paste0('data/preprocessed/', year, '_top_', top_n_tags, '_', similarity, '.csv'))
+        write_csv(paste0(
+          'data/preprocessed/',
+          year,
+          '_top_',
+          top_n_tags,
+          '_',
+          similarity,
+          '.csv'
+        ))
     } else if (similarity == 'cosine') {
       G %>%
         
@@ -112,19 +121,31 @@ networkise <-
         group_by(Tags, OwnerUserId) %>%
         summarise(num_tags = n_distinct(ParentId)) %>%
         ungroup() %>%
-        widyr::pairwise_similarity(Tags, OwnerUserId, num_tags) %>% 
+        widyr::pairwise_similarity(Tags, OwnerUserId, num_tags) %>%
         rename(Tags = item1,
                Tags_2 = item2,
                Weight = similarity) %>%
         # keep A-B and discard B-A
         filter(Tags < Tags_2) %>%
         arrange(desc(Weight)) %>%
-        write_csv(paste0('data/preprocessed/', year, '_top_', top_n_tags, '_', similarity, '.csv'))
+        write_csv(paste0(
+          'data/preprocessed/',
+          year,
+          '_top_',
+          top_n_tags,
+          '_',
+          similarity,
+          '.csv'
+        ))
     } else {
       print('Error: similarity must be either \"simple\" or \"cosine\".')
     }
   }
 
-networkise(df, top_n_tags = 150, similarity = 'simple')
+
+for (s in c('simple', 'cosine')) {
+  networkise(df, similarity = s)
+}
+
 
 tictoc::toc()  # time the script
