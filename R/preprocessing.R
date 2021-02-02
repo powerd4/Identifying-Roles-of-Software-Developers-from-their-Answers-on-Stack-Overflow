@@ -94,7 +94,7 @@ networkise <-
       )
     
     if (similarity == 'simple') {
-      G <- G %>%
+      G %>%
         widyr::pairwise_count(Tags, OwnerUserId) %>% 
         rename(Tags = item1,
                Tags_2 = item2,
@@ -104,7 +104,7 @@ networkise <-
         arrange(desc(Weight)) %>%
         write_csv(paste0('data/preprocessed/', year, '_top_', top_n_tags, '_', similarity, '.csv'))
     } else if (similarity == 'cosine') {
-      G <- G %>%
+      G %>%
         
         # tag cosine similarity.
         # this can be used to weight the network.
