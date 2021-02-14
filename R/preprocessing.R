@@ -1,5 +1,3 @@
-tictoc::tic('Timing the script')
-
 library(tidyverse)
 library(readr)
 library(scales)
@@ -9,7 +7,7 @@ year <- 2018
 preprocess <- function(year) {
   # read and concatenate all files in folder
   df <- list.files(path = paste0("data/raw/", year, "_data"),
-             full.names = TRUE) %>%
+                   full.names = TRUE) %>%
     lapply(read_csv) %>%
     bind_rows() %>%
     unique() %>%
@@ -35,23 +33,22 @@ preprocess <- function(year) {
                 mutate(prehyphen_is_tag = 1),
               by = c('prehyphen' = 'Tag')) %>%
     mutate(TagNew = case_when(prehyphen_is_tag == 1 ~ prehyphen,
-                               TRUE ~ Tag)) %>% 
+                              TRUE ~ Tag)) %>% 
     select(Id, ParentId, OwnerUserId, TagNew) %>% 
     rename(Tag = TagNew) %>%
     
     # some ad-hoc synonyms from inspection.
     mutate(Tag = case_when(str_detect(Tag, 'sql') ~ 'sql',
-                            str_detect(Tag, 'google') ~ 'google',
-                            str_detect(Tag, 'asp.net') ~ 'asp.net',
-                            str_detect(Tag, '.js') ~ 'javascript',
-                            str_detect(Tag, 'asp.net') ~ 'asp.net',
-                            str_detect(Tag, 'react') ~ 'react',
-                            TRUE ~ Tag)) %>% 
+                           str_detect(Tag, 'google') ~ 'google',
+                           str_detect(Tag, 'asp.net') ~ 'asp.net',
+                           str_detect(Tag, '.js') ~ 'javascript',
+                           str_detect(Tag, 'asp.net') ~ 'asp.net',
+                           str_detect(Tag, 'react') ~ 'react',
+                           TRUE ~ Tag)) %>% 
     
     # remove some irrelevant but popular tags as per analysis below.
-    filter(!Tag %in% c('excel', 'vba', 'twitter', 'regex', 'unit-teting', 
-                       'json', 'list', 'database', 'arrays', 'powershell', 
-                       'xml', 'wordpress', 'multithreading', 'batch-file', 
+    filter(!Tag %in% c('excel', 'twitter', 'regex', 'unit-testing', 
+                       'json', 'list', 'arrays', 'xml', 'wordpress', 'multithreading', 'batch-file', 
                        'string', 'shell')) %>% 
     
     # different tags per author, and total questions answered per author.
@@ -60,18 +57,19 @@ preprocess <- function(year) {
            user_question_total = n_distinct(ParentId)) %>%
     ungroup() %>%
     
-    # remove authors with only one tag.
+    # remove authors with only one tag as it is useless to us.
     filter(user_tag_breadth > 1)
 }
 
 df <- preprocess(year)
 
-saveRDS(df, file = "data/preprocessed/df_2018.rds")
+# ~50k users, ~4k tags, ~590k questions
+df %>% 
+  summarise(n_distinct(OwnerUserId),
+            n_distinct(Tag),
+            n_distinct(ParentId))
 
 # inspect the tag popularity distribution.
-# there are 6,888 unique questions, BUT:
-# the top 50 tags covers off around 85% of questions at a nice elbow point.
-# I will limit to the top 50 tags for computational efficiency.
 df %>%
   group_by(Tag) %>%
   summarise(TagCount = n_distinct(ParentId)) %>%
@@ -94,49 +92,46 @@ df %>%
   geom_histogram(binwidth = 1) +
   coord_cartesian(x = c(0, 25))
 
+# inspect user unique tags.
+df %>% 
+  select(OwnerUserId, user_tag_breadth) %>% 
+  unique() %>% 
+  ggplot(aes(x = user_tag_breadth)) +
+  geom_histogram(binwidth = 1) +
+  coord_cartesian(x = c(0, 25))
+
 # create source-target-weight format df to create network.
 networkise <-
   function(df,
-           top_n_tags = 50,
-           similarity = 'simple', 
-           unique = FALSE) {
-    G <- df %>%
-      inner_join(
-        df %>%
-          group_by(Tag) %>%
-          summarise(TagCount = n_distinct(ParentId)) %>%
-          arrange(desc(TagCount)) %>%
-          head(top_n_tags)
-      )
+           top_n_users = 10000,
+           similarity = 'cosine') {
     
-    if (unique) {
-      G <- G %>% 
-        select(OwnerUserId, Tag) %>% 
-        unique()
-      unique_word <- '_unique'
-    } else {
-      unique_word <- ''
-    }
+    G <- df %>%
+      inner_join(df %>% 
+                   select(OwnerUserId, user_question_total) %>% 
+                   unique() %>% 
+                   arrange(desc(user_question_total)) %>% 
+                   head(top_n_users)
+                 )
     
     if (similarity == 'simple') {
       G %>%
-        widyr::pairwise_count(Tag, OwnerUserId) %>%
-        rename(Tag = item1,
-               Tag_2 = item2,
-               Weight = n) %>%
+        widyr::pairwise_count(OwnerUserId, Tag) %>%
+        rename(User = item1,
+               User_2 = item2,
+               weight = n) %>%
         # keep A-B and discard B-A
-        filter(Tag < Tag_2) %>%
-        arrange(desc(Weight)) %>%
+        filter(User < User_2) %>%
+        arrange(desc(weight)) %>%
         # max normalisation to keep between 0 and 1
-        mutate(Weight = Weight / max(Weight)) %>% 
+        mutate(weight = weight / max(weight)) %>% 
         write_csv(paste0(
           'data/preprocessed/',
           year,
           '_top_',
-          top_n_tags,
+          top_n_users,
           '_',
           similarity,
-          unique_word,
           '.csv'
         ))
     } else if (similarity == 'cosine') {
@@ -148,21 +143,20 @@ networkise <-
         group_by(Tag, OwnerUserId) %>%
         summarise(num_answers = n()) %>%
         ungroup() %>%
-        widyr::pairwise_similarity(Tag, OwnerUserId, num_answers) %>%
-        rename(Tag = item1,
-               Tag_2 = item2,
-               Weight = similarity) %>%
+        widyr::pairwise_similarity(OwnerUserId, Tag, num_answers) %>%
+        rename(User = item1,
+               User_2 = item2,
+               weight = similarity) %>%
         # keep A-B and discard B-A
-        filter(Tag < Tag_2) %>%
-        arrange(desc(Weight)) %>%
+        filter(User < User_2) %>%
+        arrange(desc(weight)) %>%
         write_csv(paste0(
           'data/preprocessed/',
           year,
           '_top_',
-          top_n_tags,
+          top_n_users,
           '_',
           similarity,
-          unique_word,
           '.csv'
         ))
     } else {
@@ -170,13 +164,8 @@ networkise <-
     }
   }
 
-for (n in c(25, 50, 100)) {
+for (n in c(1000, 5000, 10000, 20000)) {
   for (s in c('simple', 'cosine')) {
-    for (u in c(TRUE, FALSE)) {
-      networkise(df, top_n_tags = n, similarity = s, unique = u)
-    }
+    networkise(df, top_n_users = n, similarity = s)
   }
 }
-
-
-tictoc::toc()  # time the script
