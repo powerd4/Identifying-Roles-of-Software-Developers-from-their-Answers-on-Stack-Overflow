@@ -32,6 +32,9 @@ remove(G)
 communities_louvain <- graph %>%
   cluster_louvain()
 
+# modularity
+
+
 # add clusters back to iGraph object
 graph <- graph %>%
   set_vertex_attr(name = 'communities_louvain',
@@ -73,6 +76,8 @@ community_detail <- df_communities %>%
     rank_tag_per_community = row_number()
   )
 
+saveRDS(community_detail, file = paste0('data/preprocessed/community_detail_', quarter, year, '.rds'))
+
 community_detail %>%
   group_by(community) %>%
   summarise(type = paste(unique(Tag), collapse = ", "))
@@ -93,15 +98,6 @@ community_detail %>%
   ) +
   geom_point() +
   geom_line()
-
-
-# hierarchical clustering (non-network)
-# G_dist_mat <- G %>% 
-#   mutate(distance = 1 - weight) %>% 
-#   select(User, User_2, distance) %>% 
-#   unique() %>% 
-#   reshape2::acast(User ~ User_2, value.var = 'distance')
-
 
 
 

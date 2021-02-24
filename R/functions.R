@@ -2,7 +2,7 @@ library(tidyverse)
 library(readr)
 
 # create the starting data frame from the raw data.
-preprocess <- function(quarter = 'Q2Q3', year = 2018) {
+preprocess <- function(quarter = 'Q2Q3', year = 2018, only_ground_truth_tags = 'only_ground_truth_tags') {
   # read and concatenate all files in folder
   df <-
     list.files(path = paste0("data/raw/", quarter, year, "_data"),
@@ -34,7 +34,7 @@ preprocess <- function(quarter = 'Q2Q3', year = 2018) {
         mutate(prehyphen_is_tag = 1),
       by = c('prehyphen' = 'Tag')
     ) %>%
-    mutate(TagNew = case_when(prehyphen_is_tag == 1 ~ prehyphen,
+    mutate(TagNew = case_when(prehyphen_is_tag == 1 & Tag != 'ruby-on-rails' ~ prehyphen,
                               TRUE ~ Tag)) %>%
     select(Id, ParentId, OwnerUserId, TagNew) %>%
     rename(Tag = TagNew) %>%
@@ -47,6 +47,8 @@ preprocess <- function(quarter = 'Q2Q3', year = 2018) {
         str_detect(Tag, '\\.net') ~ '.net',
         str_detect(Tag, 'react') ~ 'react',
         str_detect(Tag, 'angular') ~ 'angular',
+        str_detect(Tag, 'amazon') ~ 'amazon',
+        str_detect(Tag, 'html') ~ 'html',
         str_detect(Tag, '\\.js|typescript') ~ 'javascript',
         str_detect(Tag, 'ms-') ~ 'microsoft',
         Tag == 'tensorflow|pandas|scikit-learn' ~ 'python',
@@ -66,7 +68,6 @@ preprocess <- function(quarter = 'Q2Q3', year = 2018) {
         'list',
         'arrays',
         'xml',
-        'wordpress',
         'multithreading',
         'batch-file',
         'string',
@@ -93,7 +94,32 @@ preprocess <- function(quarter = 'Q2Q3', year = 2018) {
     # remove authors with only one tag as it is useless to us.
     filter(user_tag_breadth > 1)
   
-  saveRDS(df, file = paste0('data/preprocessed/df_', quarter, year, '.rds'))
+  if(only_ground_truth_tags == 'only_ground_truth_tags') {
+    ground_truth_tags <- readr::read_csv('data/raw/ground_truth.csv') %>%
+      rename(Tag = `In-Demand Skills`) %>% 
+      mutate(Tag = tolower(Tag)) %>%
+      mutate(Tag = strsplit(Tag, ", ")) %>%
+      unnest(Tag) %>%
+      select(Tag) %>%
+      unique() %>% 
+      mutate(Tag = case_when(str_detect(Tag, 'sql') ~ 'sql',
+                              str_detect(Tag, 'google') ~ 'google',
+                              str_detect(Tag, '\\.net') ~ '.net',
+                              str_detect(Tag, 'react') ~ 'react',
+                              str_detect(Tag, 'angular') ~ 'angular',
+                              str_detect(Tag, 'amazon') ~ 'amazon',
+                              str_detect(Tag, 'html') ~ 'html',
+                              str_detect(Tag, '\\.js|typescript') ~ 'javascript',
+                              str_detect(Tag, 'ms-') ~ 'microsoft',
+                              Tag == 'tensorflow|pandas|scikit-learn' ~ 'python',
+                              TRUE ~ Tag))
+        
+    
+    df <- df %>% 
+      inner_join(ground_truth_tags)
+  }
+  
+  saveRDS(df, file = paste0('data/preprocessed/df_', quarter, year, only_ground_truth_tags, '.rds'))
 }
 
 
@@ -103,7 +129,9 @@ networkise <- function(df,
                        size = -1,
                        similarity = 'cosine',
                        quarter = 'Q2Q3',
-                       year = 2018) {
+                       year = 2018,
+                       only_ground_truth_tags = 'only_ground_truth_tags',
+                       i = '') {
   if (size > df %>% summarise(n_distinct(OwnerUserId)) %>% pull()) {
     print('Error: size must be less than or equal to the number of users.')
   }
@@ -113,7 +141,8 @@ networkise <- function(df,
       inner_join(df %>%
                    select(OwnerUserId) %>%
                    unique() %>%
-                   slice_sample(n = size))
+                   slice_sample(n = size),
+                 by = "OwnerUserId")
   } else if (sample_method == 'top') {
     G <- df %>%
       inner_join(
@@ -121,7 +150,8 @@ networkise <- function(df,
           select(OwnerUserId, user_question_total) %>%
           unique() %>%
           arrange(desc(user_question_total)) %>%
-          head(top_n_users)
+          head(top_n_users),
+        by = "OwnerUserId"
       )
   } else if (sample_method == 'full') {
     size <- 'all'
@@ -140,21 +170,23 @@ networkise <- function(df,
       filter(User < User_2) %>%
       arrange(desc(weight)) %>%
       # max normalisation to keep between 0 and 1
-      mutate(weight = weight / max(weight)) %>%
-      write_csv(
-        paste0(
-          'data/preprocessed/',
-          quarter,
-          year,
-          '_',
-          sample_method,
-          '_',
-          size,
-          '_',
-          similarity,
-          '.csv'
-        )
-      )
+      mutate(weight = weight / max(weight)) #%>%
+      # write_csv(
+      #   paste0(
+      #     'data/preprocessed/',
+      #     quarter,
+      #     year,
+      #     '_',
+      #     sample_method,
+      #     '_',
+      #     size,
+      #     '_',
+      #     similarity,
+      #     only_ground_truth_tags,
+      #     i,
+      #     '.csv'
+      #   )
+      # )
   } else if (similarity == 'cosine') {
     G %>%
       
@@ -167,21 +199,23 @@ networkise <- function(df,
              weight = similarity) %>%
       # keep A-B and discard B-A
       filter(User < User_2) %>%
-      arrange(desc(weight)) %>%
-      write_csv(
-        paste0(
-          'data/preprocessed/',
-          quarter,
-          year,
-          '_',
-          sample_method,
-          '_',
-          size,
-          '_',
-          similarity,
-          '.csv'
-        )
-      )
+      arrange(desc(weight)) #%>%
+      # write_csv(
+      #   paste0(
+      #     'data/preprocessed/',
+      #     quarter,
+      #     year,
+      #     '_',
+      #     sample_method,
+      #     '_',
+      #     size,
+      #     '_',
+      #     similarity,
+      #     only_ground_truth_tags,
+      #     i,
+      #     '.csv'
+      #   )
+      # )
   } else {
     print('Error: similarity must be either \"simple\" or \"cosine\".')
   }
@@ -194,7 +228,9 @@ import_network <-
            year,
            sample_method,
            size,
-           similarity) {
+           similarity,
+           only_ground_truth_tags,
+           i) {
     read_csv(
       paste0(
         'data/preprocessed/',
@@ -206,6 +242,8 @@ import_network <-
         size,
         '_',
         similarity,
+        only_ground_truth_tags,
+        i,
         '.csv'
       )
     )
