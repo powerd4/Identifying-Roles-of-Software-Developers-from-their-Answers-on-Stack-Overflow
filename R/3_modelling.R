@@ -60,28 +60,36 @@ F1_h <- function(quarter, year) {
   F_XY <- function(X, Y) {
     F1_list <- c()
     for (i in X$cat %>% unique()) {
+      X_objs <- X %>%
+        filter(cat == i) %>%
+        select(object) %>%
+        unique() %>%
+        pull()
+      
       value_max <- -1
+      
       for (j in Y$cat %>% unique()) {
-        X_objs <- X %>%
-          filter(cat == i) %>%
-          select(object) %>%
-          unique() %>%
-          pull()
         Y_objs <- Y %>%
           filter(cat == j) %>%
           select(object) %>%
           unique() %>%
           pull()
+        
         F1_obj <- F1(X_objs, Y_objs)
+        
         if (is.na(F1_obj)) {
           
         } else if (F1_obj > value_max) {
           value_max <- F1_obj
         }
       }
-      F1_list <- F1_list %>% append(value_max)
+      if (value_max == -1) {
+        F1_list <- F1_list %>% append(NA)
+      } else {
+        F1_list <- F1_list %>% append(value_max)
+      }
     }
-    return(F1_1 <- sum(F1_list) / length(F1_list))
+    return(sum(F1_list, na.rm = TRUE) / length(F1_list))
   }
   
   return(2 * ((
@@ -105,8 +113,6 @@ for (i in seq(100)) {
     quarter = quarter,
     year = year
   )
-  
-  #G <- import_network('Q2Q3', '2018', 'random', '1000', 'cosine', 'only_ground_truth_tags', i)
   
   graph <- G %>%
     graph_from_data_frame(directed = FALSE) %>%
