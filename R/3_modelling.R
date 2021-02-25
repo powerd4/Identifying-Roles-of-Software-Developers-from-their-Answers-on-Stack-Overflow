@@ -27,20 +27,38 @@ ground_truth <- readr::read_csv('data/raw/ground_truth.csv') %>%
   select(cat, object) %>%
   unique() %>%
   mutate(
-    cat = case_when(
-      str_detect(cat, 'sql') ~ 'sql',
-      str_detect(cat, 'google') ~ 'google',
-      str_detect(cat, '\\.net') ~ '.net',
-      str_detect(cat, 'react') ~ 'react',
-      str_detect(cat, 'angular') ~ 'angular',
-      str_detect(cat, 'amazon') ~ 'amazon',
-      str_detect(cat, 'html') ~ 'html',
-      str_detect(cat, '\\.js|typescript') ~ 'javascript',
-      str_detect(cat, 'ms-') ~ 'microsoft',
-      cat == 'tensorflow|pandas|scikit-learn' ~ 'python',
-      TRUE ~ cat
+    object = case_when(
+      str_detect(object, 'sql') ~ 'sql',
+      str_detect(object, 'google') ~ 'google',
+      str_detect(object, '\\.net') ~ '.net',
+      str_detect(object, 'react') ~ 'react',
+      str_detect(object, 'angular') ~ 'angular',
+      str_detect(object, 'amazon') ~ 'amazon',
+      str_detect(object, 'html') ~ 'html',
+      str_detect(object, '\\.js|typescript') ~ 'javascript',
+      str_detect(object, 'ms-') ~ 'microsoft',
+      object == 'tensorflow|pandas|scikit-learn' ~ 'python',
+      TRUE ~ object
     )
   )
+
+# There is some degenerecy in roles as they have the same skills.
+# These cats can be merged.
+merged_cats <- ground_truth %>% 
+  arrange(cat, object) %>% 
+  group_by(cat) %>%
+  summarise(skillset = paste(unique(object), collapse = ", ")) %>% 
+  group_by(skillset) %>% 
+  mutate(num_cats = n_distinct(cat)) %>% 
+  ungroup() %>% 
+  filter(num_cats > 1) %>% 
+  select(cat) %>% 
+  pull()
+
+ground_truth <- ground_truth %>% 
+  mutate(cat = case_when(cat %in% merged_cats ~ 'Full-Stack/Software',
+                          TRUE ~ cat)) %>% 
+  unique()
 
 # harmonic F1 measure.
 # https://arxiv.org/pdf/1902.01691.pdf
@@ -100,11 +118,11 @@ F1_h <- function(quarter, year) {
     )))
 }
 
-F1_h_df <- tibble(i = seq(100))
+F1_h_df <- tibble(i = seq(10))
 F1_h_list = c()
 
 # https://www.nature.com/articles/s41598-019-53166-6
-for (i in seq(100)) {
+for (i in seq(10)) {
   G <- networkise(
     df,
     sample_method = 'random',
@@ -142,7 +160,7 @@ for (i in seq(100)) {
     group_by(community, Tag) %>%
     summarise(num_tag_per_community = n_distinct(ParentId)) %>%
     group_by(community) %>%
-    slice_max(order_by = num_tag_per_community, n = 5) %>%
+    slice_max(order_by = num_tag_per_community, n = 1) %>%
     # normalise the proportions per community to see which ones to keep
     group_by(community) %>%
     mutate(
